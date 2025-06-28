@@ -5,14 +5,14 @@ import os
 import pandas as pd
 
 class KirschStressValidator:
-    def __init__(self, mesh_path, sigma_H, E, nu, borehole_radius):
+    def __init__(self, mesh_path, sigma_H, sigma_h, E, nu, a):
         self.mesh_path = mesh_path
         self.sigma_H = sigma_H
+        self.sigma_h = sigma_h
         self.E = E
         self.nu = nu
-        self.a = borehole_radius
+        self.a = a
 
-        # Firedrake setup
         self.mesh = Mesh(mesh_path)
         self.V = VectorFunctionSpace(self.mesh, "CG", 2)
         self.S = TensorFunctionSpace(self.mesh, "DG", 0)
@@ -32,8 +32,11 @@ class KirschStressValidator:
         u = Function(self.V, name="Displacement")
         v = TestFunction(self.V)
 
-        T = as_vector([0.0, self.sigma_H])  # apply on top
-        F = inner(self._sigma(u), self._epsilon(v)) * dx - dot(T, v) * ds(14)
+        # Apply σ_H 向上 (top), σ_h 向右 (right)
+        F = inner(self._sigma(u), self._epsilon(v)) * dx \
+            - dot(as_vector([self.sigma_h, 0]), v) * ds(12) \
+            - dot(as_vector([0, self.sigma_H]), v) * ds(14)
+
         bcs = [
             DirichletBC(self.V.sub(0), Constant(0.0), 11),
             DirichletBC(self.V.sub(1), Constant(0.0), 13),
@@ -43,6 +46,20 @@ class KirschStressValidator:
         self.sigma_tensor = Function(self.S, name="Stress")
         self.sigma_tensor.interpolate(self._sigma(u))
 
+    def _kirsch_sigma_r(self, r, θ=0):
+        a = self.a
+        σ1 = self.sigma_H
+        σ2 = self.sigma_h
+        return (σ1 + σ2)/2 * (1 - (a/r)**2) + \
+               (σ1 - σ2)/2 * (1 - 4*(a/r)**2 + 3*(a/r)**4) * np.cos(2*θ)
+
+    def _kirsch_sigma_theta(self, r, θ=0):
+        a = self.a
+        σ1 = self.sigma_H
+        σ2 = self.sigma_h
+        return (σ1 + σ2)/2 * (1 + (a/r)**2) - \
+               (σ1 - σ2)/2 * (1 + 3*(a/r)**4) * np.cos(2*θ)
+
     def _extract_stress_profile(self):
         coords = self.mesh.coordinates.dat.data_ro
         r_max = np.max(np.sqrt(coords[:, 0]**2 + coords[:, 1]**2))
@@ -50,7 +67,6 @@ class KirschStressValidator:
 
         er = np.array([1.0, 0.0])
         et = np.array([0.0, 1.0])
-
         self.results = []
 
         for r in r_vals_all:
@@ -61,8 +77,8 @@ class KirschStressValidator:
                 continue
             σ_r_num = er @ σ @ er
             σ_θ_num = et @ σ @ et
-            σ_r_kirsch = self.sigma_H * (1 - (self.a / r)**2)
-            σ_θ_kirsch = self.sigma_H * (1 + (self.a / r)**2)
+            σ_r_kirsch = self._kirsch_sigma_r(r, θ=0)
+            σ_θ_kirsch = self._kirsch_sigma_theta(r, θ=0)
             self.results.append({
                 "r": r,
                 "sigma_r_numerical": σ_r_num,
@@ -73,37 +89,27 @@ class KirschStressValidator:
 
     def plot(self, outdir="outputs/kirsch_validation"):
         os.makedirs(outdir, exist_ok=True)
-        r = [d["r"] for d in self.results]
-        σr_num = [d["sigma_r_numerical"] for d in self.results]
-        σr_exact = [d["sigma_r_analytical"] for d in self.results]
-        σθ_num = [d["sigma_theta_numerical"] for d in self.results]
-        σθ_exact = [d["sigma_theta_analytical"] for d in self.results]
+        df = pd.DataFrame(self.results)
 
-        # σ_r
         plt.figure()
-        plt.plot(r, σr_num, "b-", label="σ_r (Numerical)")
-        plt.plot(r, σr_exact, "b--", label="σ_r (Kirsch)")
+        plt.plot(df.r, df.sigma_r_numerical, "b-", label="σ_r (Numerical)")
+        plt.plot(df.r, df.sigma_r_analytical, "b--", label="σ_r (Kirsch)")
         plt.xlabel("Radius r (m)")
         plt.ylabel("σ_r (Pa)")
         plt.title("Radial Stress σ_r")
-        plt.grid(True)
-        plt.legend()
+        plt.legend(); plt.grid(True)
         plt.tight_layout()
         plt.savefig(os.path.join(outdir, "sigma_r_validation.png"), dpi=300)
-        plt.close()
 
-        # σ_θ
         plt.figure()
-        plt.plot(r, σθ_num, "r-", label="σ_θ (Numerical)")
-        plt.plot(r, σθ_exact, "r--", label="σ_θ (Kirsch)")
+        plt.plot(df.r, df.sigma_theta_numerical, "r-", label="σ_θ (Numerical)")
+        plt.plot(df.r, df.sigma_theta_analytical, "r--", label="σ_θ (Kirsch)")
         plt.xlabel("Radius r (m)")
         plt.ylabel("σ_θ (Pa)")
         plt.title("Circumferential Stress σ_θ")
-        plt.grid(True)
-        plt.legend()
+        plt.legend(); plt.grid(True)
         plt.tight_layout()
         plt.savefig(os.path.join(outdir, "sigma_theta_validation.png"), dpi=300)
-        plt.close()
 
     def export(self, path="outputs/kirsch_validation/kirsch_data.csv"):
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -112,21 +118,13 @@ class KirschStressValidator:
 
 
 if __name__ == "__main__":
-    # validator = KirschStressValidator(
-    #     mesh_path="meshes/domain.msh",
-    #     sigma_H=10e6,
-    #     E=4.9e9,
-    #     nu=0.44,
-    #     borehole_radius=0.011
-    # )
-
     validator = KirschStressValidator(
-        mesh_path="meshes/domain1.msh",   
-        sigma_H=10e6,
+        mesh_path="meshes/domain1.msh",
+        sigma_H=30e6,     # vertical
+        sigma_h=20e6,     # horizontal
         E=6.66e9,
         nu=0.22,
-        borehole_radius=0.011             
+        a=0.011           # 22 mm borehole
     )
-
     validator.plot()
     validator.export()

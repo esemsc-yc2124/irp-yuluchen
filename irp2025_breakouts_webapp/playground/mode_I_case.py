@@ -128,58 +128,58 @@ class OutwardPenalization(DeformationObjective):
         return fd.derivative(self.value_form(), self.Q.T, test)
 
 
-# if __name__ == "__main__":
+if __name__ == "__main__":
 
-#     domainpath = "meshes/domain.msh"
+    domainpath = "meshes/domain.msh"
 
-#     params_dict = {'Step': {'Type': 'Trust Region'},
-#                    'General': {'Secant': {'Type': 'Limited-Memory BFGS',
-#                                           'Maximum Storage': 25}},
-#                    'Status Test': {'Gradient Tolerance': 1e-2,
-#                                    'Step Tolerance': 1e-8,
-#                                    'Iteration Limit': 40}}
+    params_dict = {'Step': {'Type': 'Trust Region'},
+                   'General': {'Secant': {'Type': 'Limited-Memory BFGS',
+                                          'Maximum Storage': 25}},
+                   'Status Test': {'Gradient Tolerance': 1e-2,
+                                   'Step Tolerance': 1e-8,
+                                   'Iteration Limit': 40}}
 
-#     model_parameters = {
-#         "youngs_modulus": 1e9,
-#         "poisson_ratio": 0.3,
-#         "tensile_strength": 1.5e6,
-#         "internal_friction_angle": 20,
-#         "internal_cohesion": 40.55e6,
-#         "insitu_stress_x": 1e6,
-#         "insitu_stress_y": 7.7e6}
+    model_parameters = {
+        "youngs_modulus": 1e9,
+        "poisson_ratio": 0.3,
+        "tensile_strength": 1.5e6,
+        "internal_friction_angle": 20,
+        "internal_cohesion": 40.55e6,
+        "insitu_stress_x": 1e6,
+        "insitu_stress_y": 7.7e6}
 
-#     # model_parameters = {
-#     #     "youngs_modulus": 4.9e9,              # 4.9 GPa（confining = 2 MPa 对应的 E）
-#     #     "poisson_ratio": 0.44,                # ν = 0.44（同一行）
-#     #     "tensile_strength": 0.9e6,            # 1.0 MPa，估计值，弱砂岩典型
-#     #     "internal_friction_angle": 38.9,      # φ，论文给出
-#     #     "internal_cohesion": 4.54e6,          # c，论文给出
-#     #     "insitu_stress_x": 27e6,               # 初始设为 0，后续加载
-#     #     "insitu_stress_y": 27e6
-#     # }
+    # model_parameters = {
+    #     "youngs_modulus": 4.9e9,              # 4.9 GPa（confining = 2 MPa 对应的 E）
+    #     "poisson_ratio": 0.44,                # ν = 0.44（同一行）
+    #     "tensile_strength": 0.9e6,            # 1.0 MPa，估计值，弱砂岩典型
+    #     "internal_friction_angle": 38.9,      # φ，论文给出
+    #     "internal_cohesion": 4.54e6,          # c，论文给出
+    #     "insitu_stress_x": 27e6,               # 初始设为 0，后续加载
+    #     "insitu_stress_y": 27e6
+    # }
 
-#     # setup problem
-#     mesh = Mesh(domainpath)
-#     mesh_initial = Mesh(domainpath)
-#     Q = FeControlSpace(mesh)
+    # setup problem
+    mesh = Mesh(domainpath)
+    mesh_initial = Mesh(domainpath)
+    Q = FeControlSpace(mesh)
 
-#     File = VTKFile("tensile_limit.pvd")
+    File = VTKFile("tensile_limit.pvd")
     
-#     for rampf in np.linspace(0.1, 1, num=30, endpoint=True):
-#         mesh = Mesh(Q.T)
-#          # 1. 重建 mesh
-#         Q = FeControlSpace(mesh)
-#         # 2. 定义内积和控制向量
-#         IP = H1InnerProduct(Q, fixed_bids=[11, 12, 13, 14])
-#         q = ControlVector(Q, IP)
-#         # 3. 定义目标函数
-#         J = StrengthConstraint(Q, model_parameters=model_parameters, ramping_factor=rampf) + OutwardPenalization(Q)
-#         # assemble and solve ROL optimization problem
-#         params = ROL.ParameterList(params_dict, "Parameters")
-#         # 4. 定义 ROL 优化问题 启动优化器求解
-#         problem = ROL.OptimizationProblem(J, q) 
-#         ROLsolver = ROL.OptimizationSolver(problem, params)
-#         ROLsolver.solve()
-#         File.write(J.a.tensile_limit, time=rampf)
-#         plot_mesh(mesh, mesh_initial, rampf)
-#         plot_scalar_field(J.a.tensile_limit, rampf)
+    for rampf in np.linspace(0.1, 1, num=30, endpoint=True):
+        mesh = Mesh(Q.T)
+         # 1. 重建 mesh
+        Q = FeControlSpace(mesh)
+        # 2. 定义内积和控制向量
+        IP = H1InnerProduct(Q, fixed_bids=[11, 12, 13, 14])
+        q = ControlVector(Q, IP)
+        # 3. 定义目标函数
+        J = StrengthConstraint(Q, model_parameters=model_parameters, ramping_factor=rampf) + OutwardPenalization(Q)
+        # assemble and solve ROL optimization problem
+        params = ROL.ParameterList(params_dict, "Parameters")
+        # 4. 定义 ROL 优化问题 启动优化器求解
+        problem = ROL.OptimizationProblem(J, q) 
+        ROLsolver = ROL.OptimizationSolver(problem, params)
+        ROLsolver.solve()
+        File.write(J.a.tensile_limit, time=rampf)
+        plot_mesh(mesh, mesh_initial, rampf)
+        plot_scalar_field(J.a.tensile_limit, rampf)
